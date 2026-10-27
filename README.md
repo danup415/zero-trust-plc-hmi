@@ -327,8 +327,3 @@ See [LICENSE](LICENSE) for full terms.
 
 ---
 
-## Author
-
-**Anup S.**
-B.Tech Instrumentation and Control Engineering
-Vishwakarma Institute of Technology (VIT), Pune
