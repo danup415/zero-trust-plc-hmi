@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZeroTrust SCADA — Water Tank Control</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap');
+  :root {
+    --bg:#0a0e14; --panel:#0d1117; --border:#1c2530;
+    --accent:#00d4ff; --green:#00ff88; --red:#ff3b5c;
+    --amber:#ffaa00; --dim:#3a4a5a; --text:#c9d8e8; --textdim:#4a6070;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:15px;min-height:100vh;overflow-x:hidden}
+  body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);pointer-events:none;z-index:999}
+  header{display:flex;align-items:center;justify-content:space-between;padding:10px 24px;border-bottom:1px solid var(--border);background:var(--panel)}
+  .logo{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--accent);letter-spacing:2px}
+  .logo span{color:var(--textdim)}
+  .clock{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--textdim)}
+  .status-bar{display:flex;gap:10px;align-items:center}
+  .pill{font-size:11px;font-weight:600;letter-spacing:1px;padding:3px 10px;border-radius:2px;font-family:'Share Tech Mono',monospace}
+  .p-green{background:rgba(0,255,136,0.12);color:var(--green);border:1px solid rgba(0,255,136,0.3)}
+  .p-red{background:rgba(255,59,92,0.12);color:var(--red);border:1px solid rgba(255,59,92,0.3)}
+  .p-amber{background:rgba(255,170,0,0.12);color:var(--amber);border:1px solid rgba(255,170,0,0.3)}
+  .p-blue{background:rgba(0,212,255,0.12);color:var(--accent);border:1px solid rgba(0,212,255,0.3)}
+  .main{display:grid;grid-template-columns:270px 1fr 270px;gap:1px;background:var(--border);height:calc(100vh - 49px)}
+  .col{background:var(--panel);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+  .sec{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--textdim);text-transform:uppercase;padding-bottom:7px;border-bottom:1px solid var(--border);font-family:'Share Tech Mono',monospace}
+  .card{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:11px 13px}
+  .clabel{font-size:10px;color:var(--textdim);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px;font-family:'Share Tech Mono',monospace}
+  .cval{font-size:24px;font-weight:700;color:var(--accent);font-family:'Share Tech Mono',monospace}
+  .cunit{font-size:11px;color:var(--textdim);margin-left:3px}
+  /* toggle */
+  .trow{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)}
+  .trow:last-child{border-bottom:none}
+  .tlabel{font-size:13px;font-weight:600;color:var(--text)}
+  .tsub{font-size:11px;color:var(--textdim);margin-top:1px}
+  .sw{position:relative;width:44px;height:24px;flex-shrink:0}
+  .sw input{opacity:0;width:0;height:0}
+  .sl{position:absolute;inset:0;cursor:pointer;background:var(--border);border-radius:24px;transition:background .3s}
+  .sl::before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:var(--textdim);border-radius:50%;transition:transform .3s,background .3s}
+  input:checked+.sl{background:rgba(0,255,136,0.25);border:1px solid var(--green)}
+  input:checked+.sl::before{transform:translateX(20px);background:var(--green)}
+  /* valve control row */
+  .vrow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)}
+  .vrow:last-child{border-bottom:none}
+  .vbtns{display:flex;gap:5px}
+  .vbtn{padding:4px 10px;font-size:11px;font-family:'Share Tech Mono',monospace;font-weight:600;cursor:pointer;border-radius:3px;border:1px solid var(--border);background:var(--bg);color:var(--textdim);transition:all .2s;letter-spacing:.5px}
+  .vbtn.active-open{border-color:var(--green);color:var(--green);background:rgba(0,255,136,0.1)}
+  .vbtn.active-close{border-color:var(--red);color:var(--red);background:rgba(255,59,92,0.1)}
+  .vbtn.active-auto{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.1)}
+  /* action buttons */
+  .abtn{width:100%;padding:9px 12px;margin-bottom:6px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border-radius:3px;text-align:left;transition:all .2s;letter-spacing:.5px;display:flex;align-items:center;gap:8px}
+  .abtn:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.06)}
+  .abtn.danger:hover{border-color:var(--red);color:var(--red);background:rgba(255,59,92,0.06)}
+  .abtn.running{border-color:var(--amber);color:var(--amber);background:rgba(255,170,0,0.08)}
+  .abtn.blocked{border-color:var(--green);color:var(--green);background:rgba(0,255,136,0.06)}
+  .adot{width:7px;height:7px;border-radius:50%;background:var(--textdim);flex-shrink:0}
+  .abtn.running .adot{background:var(--amber);animation:pulse 1s infinite}
+  .abtn.blocked .adot{background:var(--green)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  /* process view */
+  .pview{flex:1;position:relative;background:var(--bg);border:1px solid var(--border);border-radius:4px;overflow:hidden;min-height:380px}
+  svg.scada{width:100%;height:100%}
+  .pipe-flow{stroke-dasharray:8 6;animation:flow 1s linear infinite}
+  .pipe-flow.paused{animation-play-state:paused}
+  @keyframes flow{to{stroke-dashoffset:-14}}
+  /* log */
+  .logbox{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px 12px;font-family:'Share Tech Mono',monospace;font-size:11px;height:150px;overflow-y:auto;color:var(--textdim)}
+  .ll{padding:1px 0;line-height:1.6}
+  .lok{color:var(--green)}.lwarn{color:var(--amber)}.lerr{color:var(--red)}.linfo{color:var(--accent)}
+  /* meter */
+  .meter{width:100%;height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:4px}
+  .mfill{height:100%;border-radius:3px;transition:width .8s ease,background .4s}
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+  .center-col{display:flex;flex-direction:column}
+  /* big control buttons */
+  .bigbtn{padding:10px 0;width:100%;border-radius:3px;font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:1px;border:1px solid;transition:all .2s}
+  .bigbtn-green{background:rgba(0,255,136,0.1);border-color:var(--green);color:var(--green)}
+  .bigbtn-green:hover{background:rgba(0,255,136,0.2)}
+  .bigbtn-red{background:rgba(255,59,92,0.1);border-color:var(--red);color:var(--red)}
+  .bigbtn-red:hover{background:rgba(255,59,92,0.2)}
+  .bigbtn-amber{background:rgba(255,170,0,0.1);border-color:var(--amber);color:var(--amber)}
+  .bigbtn-amber:hover{background:rgba(255,170,0,0.2)}
+  .bigbtn-blue{background:rgba(0,212,255,0.1);border-color:var(--accent);color:var(--accent)}
+  .bigbtn-blue:hover{background:rgba(0,212,255,0.2)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">ZERO<span>TRUST</span> SCADA <span>// WATER CONTROL SYS v2.0</span></div>
+  <div class="status-bar">
+    <span class="pill p-red" id="plc-badge">PLC: STOPPED</span>
+    <span class="pill p-red" id="zt-badge">ZT: DISABLED</span>
+    <span class="pill p-amber" id="modbus-badge">BRIDGE: OFFLINE</span>
+  </div>
+  <div class="clock" id="clock">--:--:--</div>
+</header>
+
+<div class="main">
+<!-- ── LEFT ── -->
+<div class="col">
+  <div class="sec">System Control</div>
+
+  <!-- Pump + Reset -->
+  <div class="card">
+    <div class="clabel">Pump / Process</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+      <button class="bigbtn bigbtn-green" id="pump-btn" onclick="togglePump()">START PUMP</button>
+      <button class="bigbtn bigbtn-amber" onclick="resetProcess()">RESET ALL</button>
+    </div>
+    <div style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--textdim)" id="pump-status">Status: STOPPED</div>
+  </div>
+
+  <!-- Valve control -->
+  <div class="card">
+    <div class="clabel">Valve Control</div>
+    <div class="vrow">
+      <div><div class="tlabel">Valve 1</div><div class="tsub" id="v1-sub">AUTO</div></div>
+      <div class="vbtns">
+        <button class="vbtn active-auto" id="v1-auto" onclick="setValveMode(0,'auto')">AUTO</button>
+        <button class="vbtn" id="v1-open" onclick="setValveMode(0,'open')">OPEN</button>
+        <button class="vbtn" id="v1-close" onclick="setValveMode(0,'close')">CLOSE</button>
+      </div>
+    </div>
+    <div class="vrow">
+      <div><div class="tlabel">Valve 2</div><div class="tsub" id="v2-sub">AUTO</div></div>
+      <div class="vbtns">
+        <button class="vbtn active-auto" id="v2-auto" onclick="setValveMode(1,'auto')">AUTO</button>
+        <button class="vbtn" id="v2-open" onclick="setValveMode(1,'open')">OPEN</button>
+        <button class="vbtn" id="v2-close" onclick="setValveMode(1,'close')">CLOSE</button>
+      </div>
+    </div>
+    <div class="vrow">
+      <div><div class="tlabel">Valve 3</div><div class="tsub" id="v3-sub">AUTO</div></div>
+      <div class="vbtns">
+        <button class="vbtn active-auto" id="v3-auto" onclick="setValveMode(2,'auto')">AUTO</button>
+        <button class="vbtn" id="v3-open" onclick="setValveMode(2,'open')">OPEN</button>
+        <button class="vbtn" id="v3-close" onclick="setValveMode(2,'close')">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live readings -->
+  <div class="sec">Live Readings</div>
+  <div class="card">
+    <div class="clabel">Main Tank</div>
+    <div class="cval" id="main-val">0<span class="cunit">/ 400</span></div>
+    <div class="meter"><div class="mfill" id="main-meter" style="width:0%;background:var(--accent)"></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+    <div class="card">
+      <div class="clabel">Tank 1</div>
+      <div class="cval" style="font-size:18px" id="t1-val">0</div>
+      <div class="meter"><div class="mfill" id="t1-meter" style="width:0%;background:var(--green)"></div></div>
+    </div>
+    <div class="card">
+      <div class="clabel">Tank 2</div>
+      <div class="cval" style="font-size:18px" id="t2-val">0</div>
+      <div class="meter"><div class="mfill" id="t2-meter" style="width:0%;background:var(--green)"></div></div>
+    </div>
+    <div class="card">
+      <div class="clabel">Tank 3</div>
+      <div class="cval" style="font-size:18px" id="t3-val">0</div>
+      <div class="meter"><div class="mfill" id="t3-meter" style="width:0%;background:var(--green)"></div></div>
+    </div>
+  </div>
+
+  <!-- Flow rate -->
+  <div class="card">
+    <div class="clabel">Flow Rate</div>
+    <div style="display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--textdim);margin-top:4px">
+      <span>V1 <span id="fr1" style="color:var(--green)">0</span> u/s</span>
+      <span>V2 <span id="fr2" style="color:var(--green)">0</span> u/s</span>
+      <span>V3 <span id="fr3" style="color:var(--green)">0</span> u/s</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── CENTER ── -->
+<div class="col center-col" style="padding:12px;gap:10px">
+  <div class="sec">Process View — Water Distribution System</div>
+  <div class="pview">
+    <svg class="scada" viewBox="0 0 700 430" xmlns="http://www.w3.org/2000/svg">
+      <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+        <path d="M20 0L0 0 0 20" fill="none" stroke="#1c2530" stroke-width="0.5"/>
+      </pattern>
+      <rect width="700" height="430" fill="url(#grid)"/>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round"/>
+        </marker>
+      </defs>
+
+      <!-- MAIN TANK -->
+      <rect x="55" y="55" width="110" height="210" rx="4" fill="#0d1117" stroke="#1c2530" stroke-width="1.5"/>
+      <clipPath id="mc"><rect x="57" y="57" width="106" height="206" rx="3"/></clipPath>
+      <rect id="mw" x="57" y="220" width="106" height="43" fill="#0055aa" opacity="0.75" clip-path="url(#mc)"/>
+      <rect id="mw2" x="57" y="220" width="106" height="43" fill="#0088ff" opacity="0.12" clip-path="url(#mc)"/>
+      <!-- level ticks -->
+      <line x1="161" y1="95" x2="168" y2="95" stroke="#1c2530" stroke-width="1"/>
+      <text x="171" y="99" fill="#3a4a5a" font-size="9" font-family="Share Tech Mono,monospace">100%</text>
+      <line x1="161" y1="160" x2="168" y2="160" stroke="#1c2530" stroke-width="1"/>
+      <text x="171" y="164" fill="#3a4a5a" font-size="9" font-family="Share Tech Mono,monospace">50%</text>
+      <line x1="161" y1="225" x2="168" y2="225" stroke="#1c2530" stroke-width="1"/>
+      <text x="171" y="229" fill="#3a4a5a" font-size="9" font-family="Share Tech Mono,monospace">25%</text>
+      <text x="110" y="43" text-anchor="middle" fill="#4a6070" font-size="10" font-family="Share Tech Mono,monospace" letter-spacing="1">MAIN TANK</text>
+      <text id="mpct" x="110" y="165" text-anchor="middle" fill="#00aaff" font-size="20" font-family="Share Tech Mono,monospace" font-weight="bold">0%</text>
+      <text id="mlbl" x="110" y="184" text-anchor="middle" fill="#3a4a5a" font-size="11" font-family="Share Tech Mono,monospace">0 / 400</text>
+
+      <!-- PUMP -->
+      <circle cx="110" cy="300" r="18" fill="#0d1117" stroke="#1c2530" stroke-width="1.5"/>
+      <circle id="pump-ring" cx="110" cy="300" r="18" fill="none" stroke="#1c2530" stroke-width="1.5"/>
+      <text id="pump-sym" x="110" y="305" text-anchor="middle" fill="#3a4a5a" font-size="10" font-family="Share Tech Mono,monospace">PMP</text>
+      <line x1="110" y1="265" x2="110" y2="282" stroke="#1c2530" stroke-width="2"/>
+      <line x1="110" y1="318" x2="110" y2="340" stroke="#1c2530" stroke-width="2" id="pump-pipe-out"/>
+      <text id="pump-lbl" x="110" y="358" text-anchor="middle" fill="#ff3b5c" font-size="10" font-family="Share Tech Mono,monospace" letter-spacing="1">STOPPED</text>
+
+      <!-- MAIN HORIZONTAL PIPE -->
+      <line x1="165" y1="160" x2="390" y2="160" stroke="#111820" stroke-width="10" stroke-linecap="round"/>
+      <line id="pm" x1="165" y1="160" x2="390" y2="160" stroke="#0d1117" stroke-width="5" stroke-linecap="round" class="pipe-flow paused"/>
+
+      <!-- BRANCH T1 (top) -->
+      <line x1="290" y1="160" x2="290" y2="75" stroke="#111820" stroke-width="8"/>
+      <line x1="290" y1="75" x2="430" y2="75" stroke="#111820" stroke-width="8"/>
+      <line id="pt1a" x1="290" y1="155" x2="290" y2="75" stroke="#0d1117" stroke-width="4" class="pipe-flow paused"/>
+      <line id="pt1b" x1="290" y1="75" x2="420" y2="75" stroke="#0d1117" stroke-width="4" class="pipe-flow paused"/>
+
+      <!-- BRANCH T2 (mid) -->
+      <line x1="390" y1="160" x2="430" y2="160" stroke="#111820" stroke-width="8"/>
+      <line id="pt2" x1="385" y1="160" x2="420" y2="160" stroke="#0d1117" stroke-width="4" class="pipe-flow paused"/>
+
+      <!-- BRANCH T3 (bottom) -->
+      <line x1="290" y1="160" x2="290" y2="245" stroke="#111820" stroke-width="8"/>
+      <line x1="290" y1="245" x2="430" y2="245" stroke="#111820" stroke-width="8"/>
+      <line id="pt3a" x1="290" y1="165" x2="290" y2="245" stroke="#0d1117" stroke-width="4" class="pipe-flow paused"/>
+      <line id="pt3b" x1="290" y1="245" x2="420" y2="245" stroke="#0d1117" stroke-width="4" class="pipe-flow paused"/>
+
+      <!-- VALVE 1 -->
+      <g id="vsym0">
+        <polygon points="330,67 346,75 346,83 330,91 314,83 314,75" fill="rgba(255,59,92,0.1)" stroke="#ff3b5c" stroke-width="1.5"/>
+        <text x="330" y="81" text-anchor="middle" fill="#ff3b5c" font-size="8" font-family="Share Tech Mono,monospace">V1</text>
+      </g>
+      <!-- VALVE 2 -->
+      <g id="vsym1">
+        <polygon points="408,152 424,160 424,168 408,176 392,168 392,160" fill="rgba(255,59,92,0.1)" stroke="#ff3b5c" stroke-width="1.5"/>
+        <text x="408" y="166" text-anchor="middle" fill="#ff3b5c" font-size="8" font-family="Share Tech Mono,monospace">V2</text>
+      </g>
+      <!-- VALVE 3 -->
+      <g id="vsym2">
+        <polygon points="330,237 346,245 346,253 330,261 314,253 314,245" fill="rgba(255,59,92,0.1)" stroke="#ff3b5c" stroke-width="1.5"/>
+        <text x="330" y="251" text-anchor="middle" fill="#ff3b5c" font-size="8" font-family="Share Tech Mono,monospace">V3</text>
+      </g>
+
+      <!-- SUB TANK 1 -->
+      <rect x="420" y="35" width="85" height="125" rx="3" fill="#0d1117" stroke="#1c2530" stroke-width="1.5"/>
+      <clipPath id="t1c"><rect x="422" y="37" width="81" height="121" rx="2"/></clipPath>
+      <rect id="t1w" x="422" y="120" width="81" height="36" fill="#006633" opacity="0.75" clip-path="url(#t1c)"/>
+      <text x="462" y="26" text-anchor="middle" fill="#4a6070" font-size="9" font-family="Share Tech Mono,monospace" letter-spacing="1">TANK 1</text>
+      <text id="t1pct" x="462" y="106" text-anchor="middle" fill="#00ff88" font-size="15" font-family="Share Tech Mono,monospace">0%</text>
+
+      <!-- SUB TANK 2 -->
+      <rect x="420" y="123" width="85" height="125" rx="3" fill="#0d1117" stroke="#1c2530" stroke-width="1.5"/>
+      <clipPath id="t2c"><rect x="422" y="125" width="81" height="121" rx="2"/></clipPath>
+      <rect id="t2w" x="422" y="208" width="81" height="36" fill="#006633" opacity="0.75" clip-path="url(#t2c)"/>
+      <text x="462" y="114" text-anchor="middle" fill="#4a6070" font-size="9" font-family="Share Tech Mono,monospace" letter-spacing="1">TANK 2</text>
+      <text id="t2pct" x="462" y="194" text-anchor="middle" fill="#00ff88" font-size="15" font-family="Share Tech Mono,monospace">0%</text>
+
+      <!-- SUB TANK 3 -->
+      <rect x="420" y="211" width="85" height="125" rx="3" fill="#0d1117" stroke="#1c2530" stroke-width="1.5"/>
+      <clipPath id="t3c"><rect x="422" y="213" width="81" height="121" rx="2"/></clipPath>
+      <rect id="t3w" x="422" y="296" width="81" height="36" fill="#006633" opacity="0.75" clip-path="url(#t3c)"/>
+      <text x="462" y="202" text-anchor="middle" fill="#4a6070" font-size="9" font-family="Share Tech Mono,monospace" letter-spacing="1">TANK 3</text>
+      <text id="t3pct" x="462" y="282" text-anchor="middle" fill="#00ff88" font-size="15" font-family="Share Tech Mono,monospace">0%</text>
+
+      <!-- ZT PROXY BOX -->
+      <rect x="550" y="120" width="130" height="100" rx="5" fill="#0d1117" stroke="#1c2530" stroke-width="1"/>
+      <text x="615" y="142" text-anchor="middle" fill="#3a4a5a" font-size="9" font-family="Share Tech Mono,monospace" letter-spacing="2">ZT PROXY</text>
+      <line x1="550" y1="152" x2="680" y2="152" stroke="#1c2530" stroke-width="0.5"/>
+      <text id="zt-line1" x="615" y="168" text-anchor="middle" fill="#3a4a5a" font-size="10" font-family="Share Tech Mono,monospace">DISABLED</text>
+      <text id="zt-line2" x="615" y="183" text-anchor="middle" fill="#3a4a5a" font-size="9" font-family="Share Tech Mono,monospace">mTLS: OFF</text>
+      <text id="zt-line3" x="615" y="198" text-anchor="middle" fill="#3a4a5a" font-size="9" font-family="Share Tech Mono,monospace">Policy: OFF</text>
+      <text id="zt-blocked" x="615" y="213" text-anchor="middle" fill="#ff3b5c" font-size="9" font-family="Share Tech Mono,monospace">BLOCKED: 0</text>
+      <line x1="550" y1="170" x2="510" y2="170" stroke="#1c2530" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="530" y="165" text-anchor="middle" fill="#3a4a5a" font-size="8" font-family="Share Tech Mono,monospace">HMI</text>
+
+      <!-- ATTACK BANNER -->
+      <g id="atk-banner" opacity="0">
+        <rect x="180" y="388" width="340" height="28" rx="3" fill="rgba(255,59,92,0.15)" stroke="#ff3b5c" stroke-width="1"/>
+        <text id="atk-txt" x="350" y="406" text-anchor="middle" fill="#ff3b5c" font-size="11" font-family="Share Tech Mono,monospace" letter-spacing="1">ATTACK ACTIVE</text>
+      </g>
+
+      <!-- BLOCKED BANNER -->
+      <g id="blk-banner" opacity="0">
+        <rect x="180" y="388" width="340" height="28" rx="3" fill="rgba(0,255,136,0.12)" stroke="#00ff88" stroke-width="1"/>
+        <text id="blk-txt" x="350" y="406" text-anchor="middle" fill="#00ff88" font-size="11" font-family="Share Tech Mono,monospace" letter-spacing="1">BLOCKED BY ZERO TRUST</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="sec">System Log</div>
+  <div class="logbox" id="logbox">
+    <div class="ll linfo">[SYSTEM] Dashboard v2.0 ready. Start pump to begin simulation.</div>
+  </div>
+</div>
+
+<!-- ── RIGHT ── -->
+<div class="col">
+  <div class="sec">Zero Trust Layer</div>
+  <div class="card">
+    <div class="trow">
+      <div><div class="tlabel">ZT Security</div><div class="tsub">Master switch</div></div>
+      <label class="sw"><input type="checkbox" id="zt-tog" onchange="toggleZT(this.checked)"><span class="sl"></span></label>
+    </div>
+    <div class="trow">
+      <div><div class="tlabel">Block Writes</div><div class="tsub">FC05/06/0F/10</div></div>
+      <label class="sw"><input type="checkbox" id="wr-block" checked><span class="sl"></span></label>
+    </div>
+    <div class="trow">
+      <div><div class="tlabel">Cert Auth (mTLS)</div><div class="tsub">Require client cert</div></div>
+      <label class="sw"><input type="checkbox" id="cert-req" checked><span class="sl"></span></label>
+    </div>
+    <div class="trow">
+      <div><div class="tlabel">Log All Events</div><div class="tsub">Audit every packet</div></div>
+      <label class="sw"><input type="checkbox" id="log-all" checked><span class="sl"></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="clabel">ZT Statistics</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+      <div>
+        <div style="font-size:10px;color:var(--textdim);font-family:'Share Tech Mono',monospace">ALLOWED</div>
+        <div style="font-size:22px;font-weight:700;color:var(--green);font-family:'Share Tech Mono',monospace" id="allowed-ct">0</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--textdim);font-family:'Share Tech Mono',monospace">BLOCKED</div>
+        <div style="font-size:22px;font-weight:700;color:var(--red);font-family:'Share Tech Mono',monospace" id="blocked-ct">0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">Attack Simulation</div>
+
+  <button class="abtn danger" id="ab0" onclick="runAttack('valves')">
+    <span class="adot"></span>Force Valve Open / Close
+  </button>
+  <button class="abtn danger" id="ab1" onclick="runAttack('spoof')">
+    <span class="adot"></span>Sensor Spoofing
+  </button>
+  <button class="abtn danger" id="ab2" onclick="runAttack('drain')">
+    <span class="adot"></span>Main Tank Drain
+  </button>
+  <button class="abtn danger" id="ab3" onclick="runAttack('chaos')">
+    <span class="adot"></span>Combined Chaos Attack
+  </button>
+  <button class="abtn danger" id="ab4" onclick="runAttack('replay')">
+    <span class="adot"></span>Replay Attack
+  </button>
+
+  <div class="sec">Last Attack Result</div>
+  <div class="card">
+    <div class="clabel">Result</div>
+    <div id="atk-result" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--textdim);line-height:1.8">No attack run yet.</div>
+  </div>
+
+  <div class="sec">Bridge Status</div>
+  <div class="card">
+    <div class="clabel">OpenPLC Connection</div>
+    <div id="bridge-status" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--textdim);line-height:1.8">
+      Simulation mode<br>Run scada_bridge.py<br>for live PLC data
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+const S = {
+  main:0, t1:0, t2:0, t3:0,
+  v1:false, v2:false, v3:false,
+  pumpOn:false, ztOn:false,
+  blockedCt:0, allowedCt:0,
+  attackRunning:false,
+  // valve modes: 'auto','open','close'
+  vm:[' auto','auto','auto'],
+};
+
+// ── Clock ─────────────────────────────────────────────────────────────────
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toTimeString().slice(0,8)},1000);
+
+// ── Log ───────────────────────────────────────────────────────────────────
+function log(msg,type=''){
+  const b=document.getElementById('logbox');
+  const ts=new Date().toTimeString().slice(0,8);
+  const d=document.createElement('div');
+  d.className='ll'+(type?' l'+type:'');
+  d.textContent=`[${ts}] ${msg}`;
+  b.appendChild(d);
+  b.scrollTop=b.scrollHeight;
+}
+
+// ── Pump ──────────────────────────────────────────────────────────────────
+function togglePump(){
+  S.pumpOn=!S.pumpOn;
+  const btn=document.getElementById('pump-btn');
+  const lbl=document.getElementById('pump-lbl');
+  const sym=document.getElementById('pump-sym');
+  const ring=document.getElementById('pump-ring');
+  if(S.pumpOn){
+    S.main=400; S.t1=0; S.t2=0; S.t3=0;
+    btn.textContent='STOP PUMP';
+    btn.className='bigbtn bigbtn-red';
+    lbl.textContent='RUNNING';
+    lbl.setAttribute('fill','#00ff88');
+    ring.setAttribute('stroke','#00ff88');
+    sym.setAttribute('fill','#00ff88');
+    document.getElementById('pump-status').textContent='Status: RUNNING — Main tank 400 / 400';
+    document.getElementById('plc-badge').textContent='PLC: RUNNING';
+    document.getElementById('plc-badge').className='pill p-green';
+    log('Pump started. Main tank initialized to 400.','ok');
+  } else {
+    btn.textContent='START PUMP';
+    btn.className='bigbtn bigbtn-green';
+    lbl.textContent='STOPPED';
+    lbl.setAttribute('fill','#ff3b5c');
+    ring.setAttribute('stroke','#1c2530');
+    sym.setAttribute('fill','#3a4a5a');
+    document.getElementById('pump-status').textContent='Status: STOPPED';
+    document.getElementById('plc-badge').textContent='PLC: STOPPED';
+    document.getElementById('plc-badge').className='pill p-red';
+    log('Pump stopped.','warn');
+  }
+  sendCmd({action: S.pumpOn?'pump_start':'pump_stop'});
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────
+function resetProcess(){
+  S.main=400; S.t1=0; S.t2=0; S.t3=0;
+  S.v1=false; S.v2=false; S.v3=false;
+  S.vm=['auto','auto','auto'];
+  S.attackRunning=false;
+  // reset valve buttons
+  [0,1,2].forEach(i=>setValveMode(i,'auto'));
+  // hide banners
+  document.getElementById('atk-banner').style.opacity='0';
+  document.getElementById('blk-banner').style.opacity='0';
+  // reset attack buttons
+  ['ab0','ab1','ab2','ab3','ab4'].forEach(id=>{
+    const b=document.getElementById(id);
+    b.classList.remove('running','blocked');
+  });
+  document.getElementById('atk-result').textContent='Process reset.';
+  document.getElementById('atk-result').style.color='var(--textdim)';
+  log('Process RESET — all tanks and valves restored to initial state.','warn');
+  sendCmd({action:'reset'});
+}
+
+// ── Valve modes ───────────────────────────────────────────────────────────
+function setValveMode(idx, mode){
+  S.vm[idx]=mode;
+  const pfx=['v1','v2','v3'][idx];
+  const sub=document.getElementById(pfx+'-sub');
+  // update button active states
+  ['auto','open','close'].forEach(m=>{
+    const btn=document.getElementById(pfx+'-'+m);
+    btn.className='vbtn'+(mode===m ? ' active-'+(m==='auto'?'auto':m==='open'?'open':'close') : '');
+  });
+  if(mode==='auto')        { sub.textContent='AUTO — PLC controlled'; }
+  else if(mode==='open')   { sub.textContent='FORCED OPEN'; S['v'+(idx+1)]=true; }
+  else if(mode==='close')  { sub.textContent='FORCED CLOSED'; S['v'+(idx+1)]=false; }
+  log(`Valve ${idx+1} set to ${mode.toUpperCase()}`,'warn');
+  sendCmd({action:'valve_set', valve:idx, value: mode==='open' ? true : mode==='close' ? false : null, mode});
+}
+
+// ── ZT toggle ─────────────────────────────────────────────────────────────
+function toggleZT(on){
+  S.ztOn=on;
+  document.getElementById('zt-badge').textContent=on?'ZT: ACTIVE':'ZT: DISABLED';
+  document.getElementById('zt-badge').className='pill '+(on?'p-green':'p-red');
+  document.getElementById('zt-line1').textContent=on?'ACTIVE':'DISABLED';
+  document.getElementById('zt-line1').setAttribute('fill',on?'#00ff88':'#3a4a5a');
+  document.getElementById('zt-line2').textContent=on?'mTLS: ON':'mTLS: OFF';
+  document.getElementById('zt-line2').setAttribute('fill',on?'#00d4ff':'#3a4a5a');
+  document.getElementById('zt-line3').textContent=on?'Policy: WRITE-BLOCK':'Policy: OFF';
+  document.getElementById('zt-line3').setAttribute('fill',on?'#00d4ff':'#3a4a5a');
+  log(on?'Zero Trust ENABLED — mTLS + policy engine active.':'Zero Trust DISABLED — network unprotected!', on?'ok':'err');
+  sendCmd({action: on?'zt_enable':'zt_disable'});
+}
+
+// ── Attacks ───────────────────────────────────────────────────────────────
+const ATTACKS = {
+  valves:{
+    name:'Force Valve Open/Close', btnId:'ab0',
+    blocked:'Write Coil (FC05) rejected — no valid mTLS certificate',
+    steps:[
+      {d:0,    fn:s=>{s.v1=false;s.v2=false;s.v3=false; return '[ATTACK] Forcing ALL valves CLOSED — tanks stop filling!'}},
+      {d:3000, fn:s=>{return '[ATTACK] Valves closed for 3s. Now forcing ALL OPEN...'}},
+      {d:5000, fn:s=>{s.v1=true;s.v2=true;s.v3=true; return '[ATTACK] ALL valves FORCED OPEN — overflow risk!'}},
+      {d:8000, fn:s=>{return '[ATTACK] Selective: V1 open, V2+V3 closed...'}},
+      {d:9000, fn:s=>{s.v2=false;s.v3=false; return '[ATTACK] Attacker has full individual valve control!'}},
+      {d:12000,fn:s=>null},
+    ]
+  },
+  spoof:{
+    name:'Sensor Spoofing', btnId:'ab1',
+    blocked:'Write Register (FC06) rejected — policy engine blocked write operation',
+    steps:[
+      {d:0,    fn:s=>{s.t1=0;s.t2=0;s.t3=0; return '[ATTACK] Spoofing sensors → 0. HMI shows tanks EMPTY!'}},
+      {d:3000, fn:s=>{return '[ATTACK] Tanks showing 0 — PLC opening all valves...'}},
+      {d:5000, fn:s=>{s.t1=99;s.t2=99;s.t3=99; return '[ATTACK] Spoofing sensors → 99. HMI shows tanks FULL!'}},
+      {d:8000, fn:s=>{return '[ATTACK] Valves closing — tanks actually empty!'}},
+      {d:10000,fn:s=>{s.t1=0;s.t2=99;s.t3=50; return '[ATTACK] Mixed spoof: T1=0 T2=99 T3=50. Operator confused!'}},
+      {d:13000,fn:s=>null},
+    ]
+  },
+  drain:{
+    name:'Main Tank Drain', btnId:'ab2',
+    blocked:'Write Register (FC06) to main tank rejected by ZT policy',
+    steps:[
+      {d:0,    fn:s=>{s.main=0; return '[ATTACK] Main tank drained to 0!'}},
+      {d:1000, fn:s=>{s.v1=false;s.v2=false;s.v3=false; return '[ATTACK] All valves closing — system HALTED!'}},
+      {d:2000, fn:s=>{return '[ATTACK] Oscillating drain — preventing recovery...'}},
+      {d:3500, fn:s=>{s.main=0; return '[ATTACK] Main tank reset to 0 again — cycle 1/4'}},
+      {d:5000, fn:s=>{s.main=0; return '[ATTACK] Main tank reset to 0 again — cycle 2/4'}},
+      {d:6500, fn:s=>{s.main=0; return '[ATTACK] Main tank reset to 0 again — cycle 3/4'}},
+      {d:8000, fn:s=>{s.main=0; return '[ATTACK] Main tank reset to 0 again — cycle 4/4'}},
+      {d:9000, fn:s=>{s.main=400; return '[ATTACK] Drain complete. Main tank restored.'}},
+      {d:10000,fn:s=>null},
+    ]
+  },
+  chaos:{
+    name:'Combined Chaos Attack', btnId:'ab3',
+    blocked:'All 4 write operations rejected. Identities logged by ZT proxy.',
+    steps:[
+      {d:0,    fn:s=>{s.t1=0;s.t2=0;s.t3=0; return '[1/3] Spoofing all sensors to 0...'}},
+      {d:2000, fn:s=>{s.v1=true;s.v2=true;s.v3=true; return '[2/3] Forcing all valves OPEN...'}},
+      {d:4000, fn:s=>{s.main=0; return '[3/3] Draining main tank — FULL SYSTEM DISRUPTION!'}},
+      {d:5000, fn:s=>{s.v1=false;s.v2=false;s.v3=false; return '[ATTACK] System in chaos — valves fighting each other!'}},
+      {d:7000, fn:s=>{s.main=400;s.t1=0;s.t2=0;s.t3=0; return '[ATTACK] Chaos done. System compromised and restored.'}},
+      {d:8500, fn:s=>null},
+    ]
+  },
+  replay:{
+    name:'Replay Attack', btnId:'ab4',
+    blocked:'TLS sequence numbers invalidate replayed packets — attack failed',
+    steps:[
+      {d:0,    fn:s=>{return '[ATTACK] Capturing CLOSE VALVE packet from network...'}},
+      {d:2000, fn:s=>{return '[ATTACK] Waiting... simulating delay before replay...'}},
+      {d:4000, fn:s=>{s.v1=false; return '[ATTACK] Replay #1 SUCCESS — Valve 1 CLOSED by old packet!'}},
+      {d:5500, fn:s=>{s.v1=false; return '[ATTACK] Replay #2 — PLC accepted same packet again!'}},
+      {d:7000, fn:s=>{s.v1=false; return '[ATTACK] Replay #3 — No session management in Modbus TCP!'}},
+      {d:8500, fn:s=>{s.v1=false; return '[ATTACK] Replay #4 — Same packet reused 4 times. Attack done.'}},
+      {d:10000,fn:s=>null},
+    ]
+  },
+};
+
+function runAttack(type){
+  if(S.attackRunning) return;
+  S.attackRunning=true;
+  const atk=ATTACKS[type];
+  const btn=document.getElementById(atk.btnId);
+  btn.classList.add('running');
+
+  if(S.ztOn){
+    // BLOCKED
+    S.blockedCt++;
+    document.getElementById('blocked-ct').textContent=S.blockedCt;
+    document.getElementById('zt-blocked').textContent='BLOCKED: '+S.blockedCt;
+    log(`[ATTACK] ${atk.name} — BLOCKED by Zero Trust!`,'err');
+    log(`[ZT] ${atk.blocked}`,'ok');
+    document.getElementById('atk-result').textContent='BLOCKED\n'+atk.blocked;
+    document.getElementById('atk-result').style.color='var(--green)';
+    document.getElementById('blk-banner').style.opacity='1';
+    document.getElementById('atk-banner').style.opacity='0';
+    setTimeout(()=>{
+      btn.classList.remove('running');
+      btn.classList.add('blocked');
+      document.getElementById('blk-banner').style.opacity='0';
+      S.attackRunning=false;
+      setTimeout(()=>btn.classList.remove('blocked'),2000);
+    },1800);
+    sendCmd({action:'attack',type});
+    return;
+  }
+
+  // ATTACK SUCCEEDS
+  document.getElementById('atk-banner').style.opacity='1';
+  document.getElementById('blk-banner').style.opacity='0';
+  document.getElementById('atk-txt').textContent='ATTACK: '+atk.name.toUpperCase();
+  log(`[ATTACK] ${atk.name} LAUNCHED — no security active!`,'err');
+  document.getElementById('atk-result').style.color='var(--red)';
+  S.allowedCt++;
+  document.getElementById('allowed-ct').textContent=S.allowedCt;
+
+  atk.steps.forEach(step=>{
+    setTimeout(()=>{
+      const msg=step.fn(S);
+      if(msg){
+        log(`[ATTACK] ${msg}`,'err');
+        document.getElementById('atk-result').textContent=msg;
+      } else {
+        btn.classList.remove('running');
+        document.getElementById('atk-banner').style.opacity='0';
+        S.attackRunning=false;
+        log(`[ATTACK] ${atk.name} complete. System compromised.`,'warn');
+      }
+    },step.d);
+  });
+
+  sendCmd({action:'attack',type});
+}
+
+// ── SCADA render loop ─────────────────────────────────────────────────────
+function simStep(){
+  if(!S.pumpOn) return;
+
+  // Determine valve states from modes + PLC logic
+  const plc_v1 = S.t1<80 && S.main>0;
+  const plc_v2 = S.t2<80 && S.main>0;
+  const plc_v3 = S.t3<80 && S.main>0;
+
+  if(S.vm[0]==='auto')       S.v1=plc_v1;
+  else if(S.vm[0]==='open')  S.v1=true;
+  else if(S.vm[0]==='close') S.v1=false;
+
+  if(S.vm[1]==='auto')       S.v2=plc_v2;
+  else if(S.vm[1]==='open')  S.v2=true;
+  else if(S.vm[1]==='close') S.v2=false;
+
+  if(S.vm[2]==='auto')       S.v3=plc_v3;
+  else if(S.vm[2]==='open')  S.v3=true;
+  else if(S.vm[2]==='close') S.v3=false;
+
+  // Flow
+  const rate=0.4;
+  if(S.v1&&S.main>0){S.t1=Math.min(100,S.t1+rate);S.main=Math.max(0,S.main-rate);}
+  if(S.v2&&S.main>0){S.t2=Math.min(100,S.t2+rate);S.main=Math.max(0,S.main-rate);}
+  if(S.v3&&S.main>0){S.t3=Math.min(100,S.t3+rate);S.main=Math.max(0,S.main-rate);}
+
+  // Auto refill
+  if(S.main<=0 && document.getElementById('wr-block') && S.t1>=80 && S.t2>=80 && S.t3>=80){
+    S.main=400; S.t1=0; S.t2=0; S.t3=0;
+    log('Cycle complete — auto refill triggered.','info');
+  }
+}
+
+function render(){
+  // Main tank (y=57 h=206 bottom=263)
+  const mh=Math.round(206*(S.main/400));
+  const my=263-mh;
+  document.getElementById('mw').setAttribute('y',my);
+  document.getElementById('mw').setAttribute('height',mh);
+  document.getElementById('mw2').setAttribute('y',my);
+  document.getElementById('mw2').setAttribute('height',mh);
+  document.getElementById('mpct').textContent=Math.round(S.main/400*100)+'%';
+  document.getElementById('mlbl').textContent=Math.round(S.main)+' / 400';
+
+  // Sub tanks
+  const setTankSVG=(wId,pId,val,top,bottom)=>{
+    const h=Math.round((bottom-top)*(val/100));
+    document.getElementById(wId).setAttribute('y',bottom-h);
+    document.getElementById(wId).setAttribute('height',h);
+    document.getElementById(pId).textContent=Math.round(val)+'%';
+    const col=val>=80?'#ff3b5c':val>=50?'#ffaa00':'#00ff88';
+    document.getElementById(pId).setAttribute('fill',col);
+    document.getElementById(wId).setAttribute('fill',val>=80?'#880000':val>=50?'#665500':'#006633');
+  };
+  setTankSVG('t1w','t1pct',S.t1,37,158);
+  setTankSVG('t2w','t2pct',S.t2,125,246);
+  setTankSVG('t3w','t3pct',S.t3,213,334);
+
+  // Pipes
+  const flow=S.pumpOn&&S.main>0;
+  const sp=(id,on,col)=>{
+    const e=document.getElementById(id);
+    on?e.classList.remove('paused'):e.classList.add('paused');
+    e.setAttribute('stroke',on?col:'#0d1117');
+  };
+  sp('pm',  flow,'#0066cc');
+  sp('pt1a',flow&&S.v1,'#0077ff');
+  sp('pt1b',flow&&S.v1,'#0077ff');
+  sp('pt2', flow&&S.v2,'#0077ff');
+  sp('pt3a',flow&&S.v3,'#0077ff');
+  sp('pt3b',flow&&S.v3,'#0077ff');
+
+  // Valve symbols
+  const sv=(id,open)=>{
+    const g=document.getElementById(id);
+    const col=open?'#00ff88':'#ff3b5c';
+    g.querySelector('polygon').setAttribute('stroke',col);
+    g.querySelector('polygon').setAttribute('fill',open?'rgba(0,255,136,0.12)':'rgba(255,59,92,0.12)');
+    g.querySelector('text').setAttribute('fill',col);
+  };
+  sv('vsym0',S.v1); sv('vsym1',S.v2); sv('vsym2',S.v3);
+
+  // Left panel
+  const mv=Math.round(S.main);
+  document.getElementById('main-val').innerHTML=`${mv}<span class="cunit">/ 400</span>`;
+  const mp=Math.round(S.main/400*100);
+  document.getElementById('main-meter').style.width=mp+'%';
+  document.getElementById('main-meter').style.background=mp>50?'var(--accent)':mp>25?'var(--amber)':'var(--red)';
+
+  const setPanel=(vid,mid,val)=>{
+    document.getElementById(vid).textContent=Math.round(val);
+    document.getElementById(mid).style.width=val+'%';
+    document.getElementById(mid).style.background=val>=80?'var(--red)':val>=50?'var(--amber)':'var(--green)';
+  };
+  setPanel('t1-val','t1-meter',S.t1);
+  setPanel('t2-val','t2-meter',S.t2);
+  setPanel('t3-val','t3-meter',S.t3);
+
+  // Flow rates
+  document.getElementById('fr1').textContent=S.v1&&S.main>0?'0.4':'0';
+  document.getElementById('fr2').textContent=S.v2&&S.main>0?'0.4':'0';
+  document.getElementById('fr3').textContent=S.v3&&S.main>0?'0.4':'0';
+
+  // Pump status label
+  if(S.pumpOn){
+    document.getElementById('pump-status').textContent=`Status: RUNNING — Main: ${Math.round(S.main)} / 400`;
+  }
+}
+
+setInterval(()=>{simStep();render();},100);
+render();
+
+// ── WebSocket bridge ──────────────────────────────────────────────────────
+let ws=null, wsConn=false;
+function connectWS(){
+  ws=new WebSocket('ws://localhost:8765');
+  ws.onopen=()=>{
+    wsConn=true;
+    document.getElementById('modbus-badge').textContent='MODBUS: LIVE';
+    document.getElementById('modbus-badge').className='pill p-green';
+    document.getElementById('bridge-status').textContent='Connected to OpenPLC\nReceiving live Modbus data';
+    log('WebSocket bridge connected — live PLC data active','ok');
+  };
+  ws.onmessage=(e)=>{
+    const d=JSON.parse(e.data);
+    // Only override with live data if pump is on
+    if(d.plc_connected){
+      S.main=d.main; S.t1=d.t1; S.t2=d.t2; S.t3=d.t3;
+      S.v1=d.v1; S.v2=d.v2; S.v3=d.v3;
+    }
+    document.getElementById('blocked-ct').textContent=d.blocked_count;
+    document.getElementById('allowed-ct').textContent=d.allowed_count;
+    document.getElementById('zt-blocked').textContent='BLOCKED: '+d.blocked_count;
+    document.getElementById('plc-badge').textContent=d.plc_connected?'PLC: RUNNING':'PLC: OFFLINE';
+    document.getElementById('plc-badge').className='pill '+(d.plc_connected?'p-green':'p-red');
+    if(d.last_event&&d.last_event!==ws._last){
+      ws._last=d.last_event;
+      const t=d.last_event.includes('BLOCKED')?'ok':d.last_event.includes('ATTACK')?'err':d.last_event.includes('Error')?'warn':'';
+      log(d.last_event,t);
+    }
+  };
+  ws.onclose=()=>{
+    wsConn=false;
+    document.getElementById('modbus-badge').textContent='BRIDGE: OFFLINE';
+    document.getElementById('modbus-badge').className='pill p-amber';
+    document.getElementById('bridge-status').textContent='Offline — simulation mode\nRun: python3 scada_bridge.py';
+    setTimeout(connectWS,3000);
+  };
+  ws.onerror=()=>{
+    if(!wsConn) log('Bridge offline — running in simulation mode','warn');
+  };
+}
+function sendCmd(cmd){
+  if(ws&&wsConn) ws.send(JSON.stringify(cmd));
+}
+connectWS();
+
+log('System ready. Click START PUMP to begin.','info');
+</script>
+</body>
+</html>
